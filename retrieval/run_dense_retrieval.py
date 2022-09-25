@@ -96,7 +96,7 @@ def main(args):
             text = {x: y.cuda() for x, y in text.items()}
             res = model(**text)
             cur_query_embed = res["last_hidden_state"]
-        cur_query_embed = cur_query_embed["last_hidden_state"][0, 0, :].cpu().numpy().transpose()
+        cur_query_embed = cur_query_embed[0, 0, :].cpu().numpy().transpose()
         cur_query_embed = cur_query_embed.reshape(1, -1)
         similarities = euclidean_distances(cur_query_embed, article_matrix).tolist()[0]
         ranked_docs = list(zip(article_ids, similarities))
@@ -105,33 +105,34 @@ def main(args):
         with open(args.biencoder_retrieved_abstract_pck_path.format(args.casual_task_name, docid), "wb") as f:
             pickle.dump(ranked_docs[: args.num_first_retrieval], f)
 
-        """
-        Reranker
-        """
-        ranked_doc_texts = [retrieved_abstracts[docid]["text"] for docid in ranked_docs]
-        features = tokenizer(
-            [outcome_questions[args.casual_task_name] + " " + example["text"]] * len(ranked_doc_texts),
-            ranked_doc_texts,
-            padding=True,
-            truncation=True,
-            max_length=args.max_length,
-            return_tensors="pt",
-        )
-        bs = 100  # TODO: fix hard coding
-        ids_list, mask_list, preds = [], [], []
-        for i, (ids, mask) in enumerate(tqdm(zip(features["input_ids"], features["attention_mask"]))):
-            ids_list.append(ids)
-            mask_list.append(mask)
-            if len(ids) == bs:
-                ids_list, mask_list = torch.tensor(ids_list).to(device), torch.tensor(mask_list).to(device)
-                with torch.no_grad():
-                    outputs = softmax_func(model(ids_list, mask_list)[1].cpu()).numpy()[:, 1].tolist()
-                assert len(outputs) == bs
-                preds.extend(outputs)
-                ids_list, mask_list = [], []
-        reranker_preds = list(zip(ranked_docs, preds))
-        with open(args.reranker_abstract_score_pck_path.format(args.casual_task_name, docid), "wb") as f:
-            pickle.dump(reranker_preds, f)
+        # """
+        # Reranker
+        # """
+        # ranked_doc_texts = [retrieved_abstracts[docid_ans_score[0]]["text"] for docid_ans_score in ranked_docs]
+        # features = tokenizer(
+        #     [outcome_questions[args.casual_task_name] + " " + example["text"]] * len(ranked_doc_texts),
+        #     ranked_doc_texts,
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=args.max_length,
+        #     return_tensors="pt",
+        # )
+        # print(len(features["input_ids"]))
+        # bs = 100  # TODO: fix hard coding
+        # ids_list, mask_list, preds = [], [], []
+        # for i, (ids, mask) in enumerate(tqdm(zip(features["input_ids"], features["attention_mask"]))):
+        #     ids_list.append(ids)
+        #     mask_list.append(mask)
+        #     if len(ids_list) == bs:
+        #         ids_list, mask_list = torch.tensor(ids_list).to(device), torch.tensor(mask_list).to(device)
+        #         with torch.no_grad():
+        #             outputs = softmax_func(model(ids_list, mask_list)[1].cpu()).numpy()[:, 1].tolist()
+        #         assert len(outputs) == bs
+        #         preds.extend(outputs)
+        #         ids_list, mask_list = [], []
+        # reranker_preds = list(zip([e[0] for e in ranked_docs], preds))
+        # with open(args.reranker_abstract_score_pck_path.format(args.casual_task_name, docid), "wb") as f:
+        #     pickle.dump(reranker_preds, f)
 
 
 if __name__ == "__main__":

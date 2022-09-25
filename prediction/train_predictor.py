@@ -120,7 +120,7 @@ def main(args):
             ids, mask, labels = (e.to(device, non_blocking=True) for e in batch)
             with torch.no_grad():
                 loss = model(ids, mask, labels=labels)[0]
-                loss_list.append(loss)
+                loss_list.append(loss.cpu().numpy())
         valid_loss = np.mean(loss_list)
         lr_scheduler.step(valid_loss)
         writer.add_scalar("Loss/valid", valid_loss, global_step)
