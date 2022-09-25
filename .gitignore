@@ -1,0 +1,5 @@
+data/
+logs/
+MIMIC_PREPROCESSED/
+logs42/
+pickled/

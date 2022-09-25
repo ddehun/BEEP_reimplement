@@ -1,0 +1,1 @@
+python retrieval/train_biencoder.py 

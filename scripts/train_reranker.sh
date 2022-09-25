@@ -1,0 +1,1 @@
+python retrieval/train_reranker.py --lr 2e-5 --batch_size 8 --epochs 20 

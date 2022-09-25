@@ -1,0 +1,3 @@
+ir_datasets
+transformers==4.11.3
+torch==1.7.1
