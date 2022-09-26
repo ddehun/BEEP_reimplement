@@ -60,12 +60,15 @@ def split_train_valid_test(exs: List, eval_ratio: int = 0.1) -> Tuple[List]:
     return train, valid, test
 
 
-def predictor_collate_fn(examples, pad_id):
+def predictor_collate_fn(examples, pad_id, return_example_id: bool = False):
+    example_id_list = torch.tensor([ex["id"] for ex in examples])
     all_ids = [torch.tensor(ex["input_ids"]) for ex in examples]
     mask_list = list(map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids))))
     labels = torch.tensor([ex["label"] for ex in examples], dtype=torch.long)
     all_ids = pad_sequence(all_ids, batch_first=True, padding_value=pad_id)
     mask = pad_sequence(mask_list, batch_first=True, padding_value=0)
+    if return_example_id:
+        return all_ids, mask, labels, example_id_list
     return all_ids, mask, labels
 
 

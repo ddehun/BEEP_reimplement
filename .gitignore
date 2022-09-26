@@ -4,4 +4,4 @@ MIMIC_PREPROCESSED/
 logs42/
 pickled/
 *.pyc
-utils/__pycache__/
+utils/__pycache__/*
