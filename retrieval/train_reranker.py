@@ -4,7 +4,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import random
 from utils.config import get_parser
-from utils.utils import set_seed, dump_config
+from utils.utils import set_seed, dump_config, setup_path
 from utils.datasets import get_trec_examples, TRECDataset, reranker_collate_fn, split_train_valid_test
 import torch
 from torch.utils.data import DataLoader
@@ -27,8 +27,9 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 def main(args):
     set_seed(args.seed)
-    os.makedirs(args.reranker_exp_path, exist_ok=True)
     dump_config(args, args.reranker_exp_path)
+    setup_path(args.reranker_exp_path)
+
     tokenizer = AutoTokenizer.from_pretrained(args.biencoder_lm_ckpt)
 
     """
@@ -77,7 +78,6 @@ def main(args):
 
     writer = SummaryWriter(os.path.join(args.reranker_exp_path, "board"))
 
-    os.makedirs(os.path.join(args.reranker_exp_path, "models"), exist_ok=True)
     torch.save(
         model.state_dict(),
         os.path.join(args.reranker_exp_path, "models", "begin_model.pth"),
