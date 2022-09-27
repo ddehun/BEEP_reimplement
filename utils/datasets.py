@@ -162,10 +162,12 @@ class RetrievalAugmentedMIMICDataset(Dataset):
         return len(self.features)
 
     def _read_pubmed_results(self, path) -> Dict[str, List[Tuple[str, float]]]:
+        print("[*] Read pubmed ranking results")
         flist = os.listdir(path)
+        print(f"  [*] {len(flist)} files")
         results = {}
         for fname in flist:
-            mimic_example_id = fname.split(".")[-1]
+            mimic_example_id = fname.split(".")[-2]
             with open(os.path.join(path, fname), "rb") as f:
                 data = pickle.load(f)[: self.k]
             results[mimic_example_id] = data
@@ -186,12 +188,11 @@ class RetrievalAugmentedMIMICDataset(Dataset):
         doc_scores = []
         labels = []
 
-        assert len(pubmed_rank_results) == len(mimic_examples)
         for idx, ex in enumerate(mimic_examples):
             id_, text, label = ex["id"], ex["text"], ex["label"]
-            pubmed_article_ids = list(map(lambda x: x[0], pubmed_rank_results[id_]))
-            pubmed_article_scores = list(map(lambda x: x[1], pubmed_rank_results[id_]))
-            pubmed_articles = list(map(lambda doc_id: pubmed_examples[doc_id], pubmed_article_ids))
+            pubmed_article_ids = list(map(lambda x: x[0], pubmed_rank_results[str(id_)]))
+            pubmed_article_scores = list(map(lambda x: x[1], pubmed_rank_results[str(id_)]))
+            pubmed_articles = list(map(lambda doc_id: pubmed_examples[doc_id]["text"], pubmed_article_ids))
 
             mimic_features.append(
                 self.tokenizer(
