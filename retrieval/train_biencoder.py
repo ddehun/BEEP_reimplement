@@ -44,7 +44,7 @@ def main(args):
     valid_dataset = TRECDataset(tokenizer, valid_examples, queries, docs, args.retriever_ids_pck_path.format("valid"))
 
     """
-    Training
+    Dataloaders
     """
     train_loader = DataLoader(
         train_dataset,
@@ -102,7 +102,7 @@ def main(args):
             ids, mask = (e.to(device, non_blocking=True) for e in batch)
             bs = ids.size(0) // 3
             with autocast():
-                encoded = model(ids, mask).pooler_output.reshape(bs, 3, -1)  # query, positive_doc, negative_doc
+                encoded = model(ids, mask).pooler_output.reshape(bs, 3, -1)  # 3 for query, positive_doc, negative_doc
                 loss = triplet_loss(encoded[:, 0], encoded[:, 1], encoded[:, 2])
                 scaler.scale(loss).backward()
 
@@ -124,7 +124,7 @@ def main(args):
             ids, mask = (e.to(device, non_blocking=True) for e in batch)
             bs = ids.size(0) // 3
             with torch.no_grad():
-                encoded = model(ids, mask).pooler_output.reshape(bs, 3, -1)  # query, positive_doc, negative_doc
+                encoded = model(ids, mask).pooler_output.reshape(bs, 3, -1)  # 4 for query, positive_doc, negative_doc
                 loss = triplet_loss(encoded[:, 0], encoded[:, 1], encoded[:, 2]).cpu().numpy()
                 loss_list.append(loss)
         valid_loss = np.mean(loss_list)
