@@ -3,30 +3,23 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import random
-from utils.config import get_parser
-from utils.utils import set_seed, dump_config, setup_path
-from utils.datasets import get_mimic_dataset, MIMICDataset, predictor_collate_fn
-import torch
-from transformers import AutoModel, AutoTokenizer
-from torch.utils.data import DataLoader
 from functools import partial
-from torch.cuda.amp import GradScaler, autocast
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import numpy as np
 import torch
-import math
-from torch import nn
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from functools import partial
+from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
+from utils.config import get_parser
+from utils.datasets import MIMICDataset, RetrievalAugmentedMIMICDataset, augmented_predictor_collate_fn, get_mimic_dataset, predictor_collate_fn
+from utils.utils import dump_config, set_seed, setup_path
 
+from prediction.models import RetrievalAugmentedPredictor
 
 
 def main(args):
@@ -38,34 +31,58 @@ def main(args):
     """
     Load MIMIC datasets
     """
-    pickled_train_fname = args.predictor_ids_pck_path.format(args.task, args.predictor_input_type, "train")
-    pickled_valid_fname = args.predictor_ids_pck_path.format(args.task, args.predictor_input_type, "valid")
+    pickled_train_fname = args.predictor_ids_pck_path.format(args.task, args.num_doc_for_augment, "train")
+    pickled_valid_fname = args.predictor_ids_pck_path.format(args.task, args.num_doc_for_augment, "valid")
     train_examples, valid_examples = list(map(partial(get_mimic_dataset, fname_template=args.mimic_fname, task=args.task), ["train", "valid"]))
-    train_dataset = MIMICDataset(tokenizer, train_examples, pickled_train_fname, args.max_length)
-    valid_dataset = MIMICDataset(tokenizer, valid_examples, pickled_valid_fname, args.max_length)
+    if args.num_doc_for_augment == 0:
+        train_dataset = MIMICDataset(tokenizer, train_examples, pickled_train_fname, args.max_length)
+        valid_dataset = MIMICDataset(tokenizer, valid_examples, pickled_valid_fname, args.max_length)
+    else:
+        train_dataset = RetrievalAugmentedMIMICDataset(
+            tokenizer,
+            train_examples,
+            os.path.dirname(args.biencoder_retrieved_abstract_pck_path).format(args.casual_task_name),
+            args.retrieved_abstract_fname.format(args.casual_task_name),
+            pickled_train_fname,
+            args.num_doc_for_augment,
+            args.max_length,
+        )
+        valid_dataset = RetrievalAugmentedMIMICDataset(
+            tokenizer,
+            valid_examples,
+            os.path.dirname(args.biencoder_retrieved_abstract_pck_path).format(args.casual_task_name),
+            args.retrieved_abstract_fname.format(args.casual_task_name),
+            pickled_valid_fname,
+            args.num_doc_for_augment,
+            args.max_length,
+        )
 
     """
     Training
     """
+    collate_fn = predictor_collate_fn if args.num_doc_for_augment == 0 else augmented_predictor_collate_fn
     train_loader = DataLoader(
         train_dataset,
         shuffle=True,
         batch_size=args.batch_size,
-        collate_fn=partial(predictor_collate_fn, pad_id=tokenizer.pad_token_id),
+        collate_fn=partial(collate_fn, pad_id=tokenizer.pad_token_id),
         drop_last=False,
     )
     valid_loader = DataLoader(
         valid_dataset,
         shuffle=False,
         batch_size=args.batch_size,
-        collate_fn=partial(predictor_collate_fn, pad_id=tokenizer.pad_token_id),
+        collate_fn=partial(collate_fn, pad_id=tokenizer.pad_token_id),
         drop_last=False,
     )
     """
     Model Intialization
     """
     device = torch.device("cuda")
-    model = AutoModelForSequenceClassification.from_pretrained(args.predictor_lm_ckpt).to(device)
+    if args.num_doc_for_augment == 0:
+        model = AutoModelForSequenceClassification.from_pretrained(args.predictor_lm_ckpt).to(device)
+    else:
+        model = RetrievalAugmentedPredictor(args.predictor_lm_ckpt, args.augment_strategy, args.num_predictor_labels)
     scaler = GradScaler()
     # Optimizer
     no_decay = ["bias", "LayerNorm.weight"]
@@ -97,9 +114,15 @@ def main(args):
         ########
         model.train()
         for step, batch in enumerate(train_loader):
-            ids, mask, labels = (e.to(device, non_blocking=True) for e in batch)
+            if args.num_doc_for_augment == 0:
+                ids, mask, labels = (e.to(device, non_blocking=True) for e in batch)
+            else:
+                batch = (e.to(device, non_blocking=True) for e in batch)
             with autocast():
-                loss = model(ids, mask, labels=labels)[0]
+                if args.num_doc_for_augment == 0:
+                    loss = model(ids, mask, labels=labels)[0]
+                else:
+                    loss, _ = model(batch)
                 scaler.scale(loss).backward()
 
             scaler.unscale_(optimizer)
@@ -118,9 +141,15 @@ def main(args):
         model.eval()
         loss_list = []
         for step, batch in enumerate(tqdm(valid_loader)):
-            ids, mask, labels = (e.to(device, non_blocking=True) for e in batch)
-            with torch.no_grad():
-                loss = model(ids, mask, labels=labels)[0]
+            if args.num_doc_for_augment == 0:
+                ids, mask, labels = (e.to(device, non_blocking=True) for e in batch)
+            else:
+                batch = (e.to(device, non_blocking=True) for e in batch)
+            with autocast():
+                if args.num_doc_for_augment == 0:
+                    loss = model(ids, mask, labels=labels)[0]
+                else:
+                    loss, _ = model(batch)
                 loss_list.append(loss.cpu().numpy())
         valid_loss = np.mean(loss_list)
         lr_scheduler.step(valid_loss)

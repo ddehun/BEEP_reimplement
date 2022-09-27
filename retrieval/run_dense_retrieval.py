@@ -32,6 +32,7 @@ from transformers import AutoModel, AutoTokenizer, get_scheduler, logging, AutoM
 def main(args):
     set_seed(args.seed)
     os.makedirs(os.path.dirname(args.biencoder_retrieved_abstract_pck_path).format(args.casual_task_name), exist_ok=True)
+    os.makedirs(os.path.dirname(args.reranker_abstract_score_pck_path).format(args.casual_task_name), exist_ok=True)
     os.makedirs(os.path.dirname(args.encoded_abstract_fname).format(args.task), exist_ok=True)
     tokenizer = AutoTokenizer.from_pretrained(args.biencoder_lm_ckpt)
 

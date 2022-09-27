@@ -2,12 +2,22 @@ import ir_datasets
 from typing import Tuple, List, Dict, Union
 from torch.utils.data import Dataset
 import random
-import pickle
+import sys
 import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pickle
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from functools import partial
 import pandas as pd
+
+from utils.utils import read_pickle
+
+"""
+Interface with (raw) datasets
+"""
 
 
 def get_trec_examples():
@@ -60,6 +70,40 @@ def split_train_valid_test(exs: List, eval_ratio: int = 0.1) -> Tuple[List]:
     return train, valid, test
 
 
+"""
+Collator functions for dataloader
+"""
+
+
+def augmented_predictor_collate_fn(examples, pad_id, return_example_id: bool = False):
+    # {"id": id_, "mimic_input_ids": mimic_f, "pubmed_input_ids_list": doc_f, "pubmed_scores": doc_p, "label": label}
+
+    # mimic example
+    all_ids = [torch.tensor(ex["mimic_input_ids"]) for ex in examples]
+    mask_list = list(map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids))))
+
+    # pubmed articles
+    pubmed_articles_list = list(map(lambda x: x["pubmed_input_ids_list"], examples))
+    bs, k = len(pubmed_articles_list), len(pubmed_articles_list[0])
+    all_pubmeds_ids = [torch.tensor(ids) for articles in pubmed_articles_list for ids in articles]
+    all_pubmeds_mask = list(map(partial(torch.ones, dtype=torch.long), list(map(len, all_pubmeds_ids))))
+    assert len(all_pubmeds_ids) == len(bs) * k
+
+    # labels and ids
+    example_id_list = torch.tensor([ex["id"] for ex in examples])
+    labels = torch.tensor([ex["label"] for ex in examples], dtype=torch.long)
+    all_ids = pad_sequence(all_ids, batch_first=True, padding_value=pad_id)
+    mask = pad_sequence(mask_list, batch_first=True, padding_value=0)
+    pubmed_scores = torch.tensor(pubmed_scores)
+
+    all_pubmeds_ids = pad_sequence(all_pubmeds_ids, batch_first=True, padding_value=pad_id)
+    all_pubmeds_mask = pad_sequence(all_pubmeds_mask, batch_first=True, padding_value=0)
+
+    if return_example_id:
+        return all_ids, mask, all_pubmeds_ids, all_pubmeds_mask, pubmed_scores, labels, example_id_list
+    return all_ids, mask, all_pubmeds_ids, all_pubmeds_mask, pubmed_scores, labels
+
+
 def predictor_collate_fn(examples, pad_id, return_example_id: bool = False):
     example_id_list = torch.tensor([ex["id"] for ex in examples])
     all_ids = [torch.tensor(ex["input_ids"]) for ex in examples]
@@ -87,6 +131,98 @@ def reranker_collate_fn(examples, pad_id):
     all_ids = pad_sequence(all_ids, batch_first=True, padding_value=pad_id)
     mask = pad_sequence(mask_list, batch_first=True, padding_value=0)
     return all_ids, mask, labels
+
+
+"""
+Dataset classes
+"""
+
+
+class RetrievalAugmentedMIMICDataset(Dataset):
+    def __init__(
+        self,
+        tokenizer,
+        mimic_examples: List[Dict],
+        pubmed_rank_results_dir: str,
+        pubmed_examples_fname: str,
+        pickled_fname,
+        k: int,
+        max_seq_len: int = 512,
+    ):
+        self.k = k
+        self.tokenizer = tokenizer
+        self.pickled_fname = pickled_fname
+        self.max_length = max_seq_len
+        self.features = self._featurize(mimic_examples, pubmed_rank_results_dir, pubmed_examples_fname)
+
+    def __getitem__(self, idx):
+        return self.features[idx]
+
+    def __len__(self):
+        return len(self.features)
+
+    def _read_pubmed_results(self, path) -> Dict[str, List[Tuple[str, float]]]:
+        flist = os.listdir(path)
+        results = {}
+        for fname in flist:
+            mimic_example_id = fname.split(".")[-1]
+            with open(os.path.join(path, fname), "rb") as f:
+                data = pickle.load(f)[: self.k]
+            results[mimic_example_id] = data
+        return results
+
+    def _featurize(self, mimic_examples, pubmed_rank_results_dir, pubmed_examples_fname):
+        if os.path.exists(self.pickled_fname):
+            os.makedirs(os.path.dirname(self.pickled_fname), exist_ok=True)
+            with open(self.pickled_fname, "rb") as f:
+                return pickle.load(f)
+
+        pubmed_rank_results = self._read_pubmed_results(pubmed_rank_results_dir)
+        pubmed_examples = read_pickle(pubmed_examples_fname)
+
+        ids = []
+        mimic_features = []
+        docs_features = []
+        doc_scores = []
+        labels = []
+
+        assert len(pubmed_rank_results) == len(mimic_examples)
+        for idx, ex in enumerate(mimic_examples):
+            id_, text, label = ex["id"], ex["text"], ex["label"]
+            pubmed_article_ids = list(map(lambda x: x[0], pubmed_rank_results[id_]))
+            pubmed_article_scores = list(map(lambda x: x[1], pubmed_rank_results[id_]))
+            pubmed_articles = list(map(lambda doc_id: pubmed_examples[doc_id], pubmed_article_ids))
+
+            mimic_features.append(
+                self.tokenizer(
+                    text,
+                    padding=False,
+                    truncation=True,
+                    max_length=self.max_length,
+                )["input_ids"]
+            )
+            docs_features.append(
+                self.tokenizer(
+                    pubmed_articles,
+                    padding=False,
+                    truncation=True,
+                    max_length=self.max_length,
+                )["input_ids"]
+            )
+            ids.append(id_)
+            labels.append(label)
+            doc_scores.append(pubmed_article_scores)
+
+            assert len(ids) == len(mimic_features) == len(docs_features) == len(doc_scores) == len(labels)
+
+        features = [
+            {"id": id_, "mimic_input_ids": mimic_f, "pubmed_input_ids_list": doc_f, "pubmed_scores": doc_p, "label": label}
+            for id_, mimic_f, doc_f, doc_p, label in zip(ids, mimic_features, docs_features, doc_scores, labels)
+        ]
+
+        with open(self.pickled_fname, "wb") as f:
+            pickle.dump(features, f)
+        return features
 
 
 class MIMICDataset(Dataset):

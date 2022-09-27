@@ -20,11 +20,13 @@ def get_parser():
     parser.add_argument("--reranker_exp_path", type=str, default="./{}/reranker/vanilla/", help="args.seed")
     # Experiments for predictor
     parser.add_argument("--task", type=str, choices=["MP_IN", "LOS_WEEKS"], default="MP_IN")
+    parser.add_argument("--num_predictor_labels", type=int, default=2)
     parser.add_argument("--predictor_exp_name", type=str, default="vanilla")
+    parser.add_argument("--num_doc_for_augment", type=int, default=5)
+    parser.add_argument("--augment_strategy", type=str, choices=["avg", "wavg", "svote", "wvote"])
     parser.add_argument(
         "--predictor_exp_path", type=str, default="./{}/predictor/task-{}.{}/", help="args.seed,args.task and args.predictor_exp_name"
     )
-    parser.add_argument("--predictor_input_type", type=str, default="original", choices=["original"])
 
     """
     Pickle files
@@ -42,7 +44,7 @@ def get_parser():
     parser.add_argument(
         "--reranker_abstract_score_pck_path",
         type=str,
-        default="./data/abstracts/{}-retrieved/pubmed.abstract.reranked.{}.pck",
+        default="./data/abstracts/{}-reranked/pubmed.abstract.reranked.{}.pck",
         help="args.task and mimic example id",
     )
 
@@ -53,7 +55,7 @@ def get_parser():
         "--predictor_ids_pck_path",
         type=str,
         default="./pickled/task-{}.trec.predictor.input-{}.{}.ids.pck",
-        help="args.task, args.predictor_input_type and split name",
+        help="args.task, args.num_doc_for_augment and split name",
     )
 
     # Method-specific arguments
