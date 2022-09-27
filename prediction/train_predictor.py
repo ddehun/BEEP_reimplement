@@ -13,13 +13,15 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
-
-from utils.config import get_parser
-from utils.datasets import MIMICDataset, RetrievalAugmentedMIMICDataset, augmented_predictor_collate_fn, get_mimic_dataset, predictor_collate_fn
-from utils.utils import dump_config, set_seed, setup_path
+from transformers import (AutoModel, AutoModelForSequenceClassification,
+                          AutoTokenizer)
 
 from prediction.models import RetrievalAugmentedPredictor
+from utils.config import get_parser
+from utils.datasets import (MIMICDataset, RetrievalAugmentedMIMICDataset,
+                            augmented_predictor_collate_fn, get_mimic_dataset,
+                            predictor_collate_fn)
+from utils.utils import dump_config, set_seed, setup_path
 
 
 def main(args):

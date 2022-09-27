@@ -3,8 +3,7 @@
 
 ## 0. Data Preparation
 ### 1. MIMIC (main task)
-- MIMIC3를 [this](https://github.com/bvanaken/clinical-outcome-prediction/tree/master/tasks)를 따라서 전처리하고,.
-- Locate it in ```MIMIC_PREPROCESSED/``` directory.
+- MIMIC3를 [this](https://github.com/bvanaken/clinical-outcome-prediction/tree/master/tasks)를 따라서 전처리하고, ```MIMIC_PREPROCESSED/```에 두기
 
 ### 2. PubMED 준비하기 (retrieval DB)
 - ```preprocessed/retrieve_abstracts.ipynb``` 를 실행시켜서, task에 맞는 pubmed article을 검색하기

@@ -1,10 +1,11 @@
-import random
 import json
 import os
+import pickle
+import random
 
 import numpy as np
 import torch
-import pickle
+
 
 def set_seed(random_seed: int = 42) -> None:
     """Set RNG seeds for python's `random` module, numpy and torch."""

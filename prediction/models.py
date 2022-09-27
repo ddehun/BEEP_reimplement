@@ -1,13 +1,15 @@
 from turtle import forward
+
 import torch
 from torch.nn import Module
-from transformers import AutoModel, AutoConfig
+from transformers import AutoConfig, AutoModel
 
 STRATEGY = ["avg", "wavg", "svote", "wvote"]
 
 
 class RetrievalAugmentedPredictor(Module):
     def __init__(self, lmname: str, strategy: str, num_label: int = 2):
+        super(RetrievalAugmentedPredictor, self).__init__()
         self.encoder = AutoModel.from_pretrained(lmname)
         self.lm_config = AutoConfig.from_pretrained(lmname)
         self.strategy = strategy

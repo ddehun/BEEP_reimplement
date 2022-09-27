@@ -2,22 +2,14 @@ import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import random
-from utils.config import get_parser
-from utils.utils import set_seed, dump_config
-from utils.datasets import get_mimic_dataset, MIMICDataset, predictor_collate_fn
-import torch
 import json
-from transformers import AutoModel, AutoTokenizer
-from torch.utils.data import DataLoader
+import math
+import random
 from functools import partial
-from sklearn.metrics import f1_score, accuracy_score
-from torch.cuda.amp import GradScaler, autocast
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import numpy as np
 import torch
-import math
+from sklearn.metrics import accuracy_score, f1_score
 from torch import nn
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import functional as F
@@ -25,8 +17,13 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from functools import partial
+from transformers import (AutoModel, AutoModelForSequenceClassification,
+                          AutoTokenizer)
+
+from utils.config import get_parser
+from utils.datasets import (MIMICDataset, get_mimic_dataset,
+                            predictor_collate_fn)
+from utils.utils import dump_config, set_seed
 
 
 def main(args):
