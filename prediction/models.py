@@ -4,8 +4,6 @@ import torch
 from torch.nn import Module
 from transformers import AutoConfig, AutoModel
 
-STRATEGY = ["avg", "wavg", "svote", "wvote"]
-
 
 class RetrievalAugmentedPredictor(Module):
     def __init__(self, lmname: str, strategy: str, num_label: int = 2):
@@ -21,7 +19,7 @@ class RetrievalAugmentedPredictor(Module):
     def forward(self, batch):
         """
         batch: all_ids, mask, all_pubmeds_ids, all_pubmeds_mask, doc_scores,labels, example_id_list
-        return: Tuple[logits, loss]
+        return: Tuple[loss, logits (or probs for vote strategies)]
         """
         note_ids, note_mask, docs_ids, docs_mask, doc_scores, labels, example_id = batch
 
