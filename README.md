@@ -32,7 +32,9 @@ BEEP_reimplement/
 ## 1. Train Dense-retriever and Reranker on TREC2016-CDS (Clinical Decision Support) task
 
 - Dense-retriver / reranker 학습
+
 ```python retrieval/train_biencoder.py```
+
 ```python retrieval/train_reranker.py```
 
 - 학습된 모델들로 admission note를 위한 retrieval 하기
@@ -45,7 +47,8 @@ BEEP_reimplement/
 ```python prediction/train_predictor.py```
 
 ### 2. Retrieval-augmented predictor
-```strategy = <avg,wavg,svote,wvote```
+```strategy = <avg,wavg,svote,wvote>```
+
 ```python prediction/train_predictor.py --task=MP_IN --num_doc_for_augment 5 --augment_strategy avg --predictor_exp_name strategy-avg.doc5```
 
 ## 3. Inference the model w/o retrieval
