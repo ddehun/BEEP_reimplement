@@ -56,3 +56,7 @@ BEEP_reimplement/
 
 ## 3. Inference the retrieval-augmented predictor
 ```python prediction/evaluate_predictor.py  --task=MP_IN --num_doc_for_augment 5 --augment_strategy avg --predictor_exp_name strategy-avg.doc5``` 
+
+## 3. Future plan
+- Sparse retrieval with mesh term extraction
+- Hyperparameter tuning
