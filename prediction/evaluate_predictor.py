@@ -17,13 +17,12 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import (AutoModel, AutoModelForSequenceClassification,
-                          AutoTokenizer)
+from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
 from utils.config import get_parser
-from utils.datasets import (MIMICDataset, get_mimic_dataset,
-                            predictor_collate_fn)
+from utils.datasets import MIMICDataset, get_mimic_dataset, predictor_collate_fn, augmented_predictor_collate_fn, RetrievalAugmentedMIMICDataset
 from utils.utils import dump_config, set_seed
+from prediction.models import RetrievalAugmentedPredictor
 
 
 def main(args):
@@ -34,21 +33,36 @@ def main(args):
     """
     Load MIMIC datasets
     """
-    pickled_test_fname = args.predictor_ids_pck_path.format(args.task, args.predictor_input_type, "test")
+    pickled_test_fname = args.predictor_ids_pck_path.format(args.task, args.num_doc_for_augment, "test")
     (test_examples,) = list(map(partial(get_mimic_dataset, fname_template=args.mimic_fname, task=args.task), ["test"]))
-    test_dataset = MIMICDataset(tokenizer, test_examples, pickled_test_fname, args.max_length)
+    if args.num_doc_for_augment == 0:
+        test_dataset = MIMICDataset(tokenizer, test_examples, pickled_test_fname, args.max_length)
+    else:
+        test_dataset = RetrievalAugmentedMIMICDataset(
+            tokenizer,
+            test_examples,
+            os.path.dirname(args.biencoder_retrieved_abstract_pck_path).format(args.casual_task_name),
+            args.retrieved_abstract_fname.format(args.casual_task_name),
+            pickled_test_fname,
+            args.num_doc_for_augment,
+            args.max_length,
+        )
+    collate_fn = predictor_collate_fn if args.num_doc_for_augment == 0 else augmented_predictor_collate_fn
     test_loader = DataLoader(
         test_dataset,
         shuffle=False,
         batch_size=args.batch_size,
-        collate_fn=partial(predictor_collate_fn, pad_id=tokenizer.pad_token_id, return_example_id=True),
+        collate_fn=partial(collate_fn, pad_id=tokenizer.pad_token_id),
         drop_last=False,
     )
     """
     Model Intialization
     """
     device = torch.device("cuda")
-    model = AutoModelForSequenceClassification.from_pretrained(args.predictor_lm_ckpt).to(device).eval()
+    if args.num_doc_for_augment == 0:
+        model = AutoModelForSequenceClassification.from_pretrained(args.predictor_lm_ckpt).to(device).eval()
+    else:
+        model = RetrievalAugmentedPredictor(args.predictor_lm_ckpt, args.augment_strategy, args.num_predictor_labels).to(device).eval()
     model.load_state_dict(torch.load(os.path.join(args.predictor_exp_path, "models", "best_model.pth")))
 
     """
@@ -56,9 +70,16 @@ def main(args):
     """
     ids_list, answer_list, logit_list = [], [], []
     for step, batch in enumerate(tqdm(test_loader)):
-        ids, mask, labels, example_ids = (e.to(device, non_blocking=True) for e in batch)
+        if args.num_doc_for_augment == 0:
+            ids, mask, labels, example_ids = (e.to(device, non_blocking=True) for e in batch)
+        else:
+            batch = (e.to(device, non_blocking=True) for e in batch)
+            example_ids = batch[-1]
         with torch.no_grad():
-            logits = model(ids, mask)[0].cpu().numpy()
+            if args.num_doc_for_augment == 0:
+                logits = model(ids, mask)[0].cpu().numpy()
+            else:
+                _, logits = model(batch)
             logit_list.append(logits)
         answer_list.append(labels.cpu().numpy())
         ids_list.append(example_ids.cpu().numpy())

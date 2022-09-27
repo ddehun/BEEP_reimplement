@@ -52,21 +52,15 @@ def get_trec_examples():
                 negative_list.append(article_id)
         # Hard-negative strategy following the original BEEP paper
         negative_list = negative_list[: len(positive_list)]
-        total_examples += [
-            [qid, pos, neg] for pos, neg in zip(positive_list, negative_list)
-        ]
+        total_examples += [[qid, pos, neg] for pos, neg in zip(positive_list, negative_list)]
     return total_examples, queries, docs
 
 
-def get_mimic_dataset(
-    setname, fname_template, task
-) -> List[Dict[str, Union[int, str]]]:
+def get_mimic_dataset(setname, fname_template, task) -> List[Dict[str, Union[int, str]]]:
     assert setname in ["train", "valid", "test"]
     setname = "val" if setname == "valid" else setname
     fname = fname_template.format(task, setname)
-    df = pd.read_csv(fname).rename(
-        columns={"hospital_expire_flag": "label", "los_label": "label"}
-    )
+    df = pd.read_csv(fname).rename(columns={"hospital_expire_flag": "label", "los_label": "label"})
     return df.to_dict("records")
 
 
@@ -83,82 +77,63 @@ Collator functions for dataloader
 """
 
 
-def augmented_predictor_collate_fn(examples, pad_id, return_example_id: bool = False):
+def augmented_predictor_collate_fn(examples, pad_id):
     # {"id": id_, "mimic_input_ids": mimic_f, "pubmed_input_ids_list": doc_f, "pubmed_scores": doc_p, "label": label}
 
     # mimic example
     all_ids = [torch.tensor(ex["mimic_input_ids"]) for ex in examples]
-    mask_list = list(
-        map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids)))
-    )
+    mask_list = list(map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids))))
 
     # pubmed articles
     pubmed_articles_list = list(map(lambda x: x["pubmed_input_ids_list"], examples))
     bs, k = len(pubmed_articles_list), len(pubmed_articles_list[0])
-    all_pubmeds_ids = [
-        torch.tensor(ids) for articles in pubmed_articles_list for ids in articles
-    ]
-    all_pubmeds_mask = list(
-        map(partial(torch.ones, dtype=torch.long), list(map(len, all_pubmeds_ids)))
-    )
-    assert len(all_pubmeds_ids) == len(bs) * k
+    all_pubmeds_ids = [torch.tensor(ids) for articles in pubmed_articles_list for ids in articles]
+    all_pubmeds_mask = list(map(partial(torch.ones, dtype=torch.long), list(map(len, all_pubmeds_ids))))
+    assert len(all_pubmeds_ids) == bs * k
 
     # labels and ids
     example_id_list = torch.tensor([ex["id"] for ex in examples])
     labels = torch.tensor([ex["label"] for ex in examples], dtype=torch.long)
     all_ids = pad_sequence(all_ids, batch_first=True, padding_value=pad_id)
     mask = pad_sequence(mask_list, batch_first=True, padding_value=0)
-    pubmed_scores = torch.tensor(pubmed_scores)
+    pubmed_scores = torch.tensor([e["pubmed_scores"] for e in examples])
 
-    all_pubmeds_ids = pad_sequence(
-        all_pubmeds_ids, batch_first=True, padding_value=pad_id
-    )
+    all_pubmeds_ids = pad_sequence(all_pubmeds_ids, batch_first=True, padding_value=pad_id)
     all_pubmeds_mask = pad_sequence(all_pubmeds_mask, batch_first=True, padding_value=0)
 
-    if return_example_id:
-        return (
-            all_ids,
-            mask,
-            all_pubmeds_ids,
-            all_pubmeds_mask,
-            pubmed_scores,
-            labels,
-            example_id_list,
-        )
-    return all_ids, mask, all_pubmeds_ids, all_pubmeds_mask, pubmed_scores, labels
+    return (
+        all_ids,
+        mask,
+        all_pubmeds_ids,
+        all_pubmeds_mask,
+        pubmed_scores,
+        labels,
+        example_id_list,
+    )
 
 
 def predictor_collate_fn(examples, pad_id, return_example_id: bool = False):
     example_id_list = torch.tensor([ex["id"] for ex in examples])
     all_ids = [torch.tensor(ex["input_ids"]) for ex in examples]
-    mask_list = list(
-        map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids)))
-    )
+    mask_list = list(map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids))))
     labels = torch.tensor([ex["label"] for ex in examples], dtype=torch.long)
     all_ids = pad_sequence(all_ids, batch_first=True, padding_value=pad_id)
     mask = pad_sequence(mask_list, batch_first=True, padding_value=0)
-    if return_example_id:
-        return all_ids, mask, labels, example_id_list
-    return all_ids, mask, labels
+
+    return all_ids, mask, labels, example_id_list
 
 
 def biencoder_collate_fn(examples, pad_id):
     all_ids = [ids for ex in examples for ids in ex]
-    mask_list = list(
-        map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids)))
-    )
-    all_ids = pad_sequence(
-        [torch.tensor(seq) for seq in all_ids], batch_first=True, padding_value=pad_id
-    )
+    mask_list = list(map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids))))
+    all_ids = pad_sequence([torch.tensor(seq) for seq in all_ids], batch_first=True, padding_value=pad_id)
     mask = pad_sequence(mask_list, batch_first=True, padding_value=0)
     return all_ids, mask
 
 
 def reranker_collate_fn(examples, pad_id):
     all_ids = [torch.tensor(ex["input_ids"]) for ex in examples]
-    mask_list = list(
-        map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids)))
-    )
+    mask_list = list(map(partial(torch.ones, dtype=torch.long), list(map(len, all_ids))))
     labels = torch.tensor([ex["label"] for ex in examples], dtype=torch.long)
     all_ids = pad_sequence(all_ids, batch_first=True, padding_value=pad_id)
     mask = pad_sequence(mask_list, batch_first=True, padding_value=0)
@@ -185,9 +160,7 @@ class RetrievalAugmentedMIMICDataset(Dataset):
         self.tokenizer = tokenizer
         self.pickled_fname = pickled_fname
         self.max_length = max_seq_len
-        self.features = self._featurize(
-            mimic_examples, pubmed_rank_results_dir, pubmed_examples_fname
-        )
+        self.features = self._featurize(mimic_examples, pubmed_rank_results_dir, pubmed_examples_fname)
 
     def __getitem__(self, idx):
         return self.features[idx]
@@ -207,9 +180,7 @@ class RetrievalAugmentedMIMICDataset(Dataset):
             results[mimic_example_id] = data
         return results
 
-    def _featurize(
-        self, mimic_examples, pubmed_rank_results_dir, pubmed_examples_fname
-    ):
+    def _featurize(self, mimic_examples, pubmed_rank_results_dir, pubmed_examples_fname):
         if os.path.exists(self.pickled_fname):
             os.makedirs(os.path.dirname(self.pickled_fname), exist_ok=True)
             with open(self.pickled_fname, "rb") as f:
@@ -226,15 +197,9 @@ class RetrievalAugmentedMIMICDataset(Dataset):
 
         for idx, ex in enumerate(mimic_examples):
             id_, text, label = ex["id"], ex["text"], ex["label"]
-            pubmed_article_ids = list(
-                map(lambda x: x[0], pubmed_rank_results[str(id_)])
-            )
-            pubmed_article_scores = list(
-                map(lambda x: x[1], pubmed_rank_results[str(id_)])
-            )
-            pubmed_articles = list(
-                map(lambda doc_id: pubmed_examples[doc_id]["text"], pubmed_article_ids)
-            )
+            pubmed_article_ids = list(map(lambda x: x[0], pubmed_rank_results[str(id_)]))
+            pubmed_article_scores = list(map(lambda x: x[1], pubmed_rank_results[str(id_)]))
+            pubmed_articles = list(map(lambda doc_id: pubmed_examples[doc_id]["text"], pubmed_article_ids))
 
             mimic_features.append(
                 self.tokenizer(
@@ -256,13 +221,7 @@ class RetrievalAugmentedMIMICDataset(Dataset):
             labels.append(label)
             doc_scores.append(pubmed_article_scores)
 
-            assert (
-                len(ids)
-                == len(mimic_features)
-                == len(docs_features)
-                == len(doc_scores)
-                == len(labels)
-            )
+            assert len(ids) == len(mimic_features) == len(docs_features) == len(doc_scores) == len(labels)
 
         features = [
             {
@@ -272,9 +231,7 @@ class RetrievalAugmentedMIMICDataset(Dataset):
                 "pubmed_scores": doc_p,
                 "label": label,
             }
-            for id_, mimic_f, doc_f, doc_p, label in zip(
-                ids, mimic_features, docs_features, doc_scores, labels
-            )
+            for id_, mimic_f, doc_f, doc_p, label in zip(ids, mimic_features, docs_features, doc_scores, labels)
         ]
 
         with open(self.pickled_fname, "wb") as f:
@@ -317,10 +274,7 @@ class MIMICDataset(Dataset):
             ids.append(id_)
             labels.append(label)
         assert len(features) == len(labels) == len(ids)
-        features = [
-            {"id": id_, "input_ids": f, "label": label}
-            for id_, f, label in zip(ids, features, labels)
-        ]
+        features = [{"id": id_, "input_ids": f, "label": label} for id_, f, label in zip(ids, features, labels)]
 
         with open(self.pickled_fname, "wb") as f:
             pickle.dump(features, f)
@@ -343,13 +297,9 @@ class TRECDataset(Dataset):
         os.makedirs(os.path.dirname(feature_save_fname), exist_ok=True)
         if not os.path.exists(feature_save_fname):
             if not is_reranker:
-                self.features = self._featurize_for_biencoder(
-                    examples, queries, docs, max_length
-                )
+                self.features = self._featurize_for_biencoder(examples, queries, docs, max_length)
             else:
-                self.features = self._featurize_for_reranker(
-                    examples, queries, docs, max_length
-                )
+                self.features = self._featurize_for_reranker(examples, queries, docs, max_length)
             with open(feature_save_fname, "wb") as f:
                 pickle.dump(self.features, f)
         else:
@@ -380,9 +330,7 @@ class TRECDataset(Dataset):
             )
             labels.extend([1, 0])
         assert len(features) == len(labels)
-        features = [
-            {"input_ids": f, "label": label} for f, label in zip(features, labels)
-        ]
+        features = [{"input_ids": f, "label": label} for f, label in zip(features, labels)]
         return features
 
     def _featurize_for_biencoder(self, examples, queries, docs, max_length: int):

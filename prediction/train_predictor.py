@@ -13,14 +13,11 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import (AutoModel, AutoModelForSequenceClassification,
-                          AutoTokenizer)
+from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 
 from prediction.models import RetrievalAugmentedPredictor
 from utils.config import get_parser
-from utils.datasets import (MIMICDataset, RetrievalAugmentedMIMICDataset,
-                            augmented_predictor_collate_fn, get_mimic_dataset,
-                            predictor_collate_fn)
+from utils.datasets import MIMICDataset, RetrievalAugmentedMIMICDataset, augmented_predictor_collate_fn, get_mimic_dataset, predictor_collate_fn
 from utils.utils import dump_config, set_seed, setup_path
 
 
@@ -84,7 +81,7 @@ def main(args):
     if args.num_doc_for_augment == 0:
         model = AutoModelForSequenceClassification.from_pretrained(args.predictor_lm_ckpt).to(device)
     else:
-        model = RetrievalAugmentedPredictor(args.predictor_lm_ckpt, args.augment_strategy, args.num_predictor_labels)
+        model = RetrievalAugmentedPredictor(args.predictor_lm_ckpt, args.augment_strategy, args.num_predictor_labels).to(device)
     scaler = GradScaler()
     # Optimizer
     no_decay = ["bias", "LayerNorm.weight"]
@@ -117,7 +114,7 @@ def main(args):
         model.train()
         for step, batch in enumerate(train_loader):
             if args.num_doc_for_augment == 0:
-                ids, mask, labels = (e.to(device, non_blocking=True) for e in batch)
+                ids, mask, labels, _ = (e.to(device, non_blocking=True) for e in batch)
             else:
                 batch = (e.to(device, non_blocking=True) for e in batch)
             with autocast():

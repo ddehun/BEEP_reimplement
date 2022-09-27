@@ -23,10 +23,10 @@ class RetrievalAugmentedPredictor(Module):
         batch: all_ids, mask, all_pubmeds_ids, all_pubmeds_mask, doc_scores,labels, example_id_list
         return: Tuple[logits, loss]
         """
-        note_ids, note_mask, docs_ids, docs_mask, doc_scores, labels, _ = batch
+        note_ids, note_mask, docs_ids, docs_mask, doc_scores, labels, example_id = batch
 
         bs = note_ids.size(0)
-        k = docs_ids.size(0) / bs
+        k = int(docs_ids.size(0) / bs)
 
         note_outputs = self.encoder(note_ids, note_mask, return_dict=True).pooler_output
         docs_outputs = self.encoder(docs_ids, docs_mask, return_dict=True).pooler_output
